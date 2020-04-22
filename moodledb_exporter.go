@@ -8,13 +8,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
+	"os"
 )
 
 var (
 	listenAddress = flag.String("web.listen-address", ":9720", "Address to listen on for web interface and telemetry.")
 	metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-	DSN           = flag.String("mysql.dsn", "user:pass@(localhost:3306)/", "Mysql Data Source Name")
 	Prefix        = flag.String("mysql.prefix", "db_", "Prefix used for filtering relevant databases (those containing Moodles).")
+
+	DSN = ""
 )
 
 type MoodleDBCollector struct {
@@ -26,7 +28,7 @@ func (c *MoodleDBCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *MoodleDBCollector) Collect(ch chan<- prometheus.Metric) {
-	db, err := sql.Open("mysql", *DSN)
+	db, err := sql.Open("mysql", DSN)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -73,11 +75,20 @@ func NewMoodleDBCollector() *MoodleDBCollector {
 }
 
 func init() {
+	DSN = os.Getenv("DATA_SOURCE_NAME")
+	if len(DSN) == 0 {
+		fmt.Println("DATA_SOURCE_NAME needs to be set in environment.")
+		os.Exit(1)
+	} else {
+		fmt.Printf("Trying to work with DSN: '%s'\n", DSN)
+	}
+
 	prometheus.MustRegister(NewMoodleDBCollector())
 }
 
 func main() {
 	flag.Parse()
+
 	http.Handle(*metricsPath, promhttp.Handler())
 	http.ListenAndServe(*listenAddress, nil)
 }
