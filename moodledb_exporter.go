@@ -33,7 +33,11 @@ func (c *MoodleDBCollector) Collect(ch chan<- prometheus.Metric) {
 	defer db.Close()
 
 	// build filtered db list
-	res, _ := db.Query("SHOW DATABASES")
+	res, err := db.Query("SHOW DATABASES")
+	if err != nil {
+		fmt.Println("There is a problem with the database.")
+		return
+	}
 	moodledbs := []string{}
 	for res.Next() {
 		dbName := ""
