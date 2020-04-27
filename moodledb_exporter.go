@@ -20,11 +20,25 @@ var (
 )
 
 type MoodleDBCollector struct {
-	moodleUsers *prometheus.Desc
+	moodleUsers       *prometheus.Desc
+	moodleActiveUsers *prometheus.Desc
 }
 
 func (c *MoodleDBCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.moodleUsers
+}
+
+func queryResult(db *sql.DB, query string, dbName string) (float64, error) {
+	// passed query *must* be a simple COUNT(*)
+	res, err := db.Query(fmt.Sprintf(query, dbName))
+	if err != nil {
+		return 0.0, fmt.Errorf("Error running query.")
+	}
+	resultCount := 0
+	for res.Next() { // this should run just once
+		res.Scan(&resultCount)
+	}
+	return float64(resultCount), nil
 }
 
 func (c *MoodleDBCollector) Collect(ch chan<- prometheus.Metric) {
@@ -51,26 +65,31 @@ func (c *MoodleDBCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// query each db for their users
 	for _, dbName := range moodledbs {
-		res, err := db.Query(fmt.Sprintf("SELECT COUNT(*) AS userCount FROM %s.mdl_user WHERE deleted=0", dbName))
-		if err != nil {
-			continue
+		result, err := queryResult(db, "SELECT COUNT(*) FROM %s.mdl_user WHERE deleted=0", dbName)
+		if err == nil {
+			ch <- prometheus.MustNewConstMetric(
+				c.moodleUsers,
+				prometheus.GaugeValue,
+				result,
+				dbName,
+			)
 		}
-		userCount := 0
-		for res.Next() { // this will run just once
-			res.Scan(&userCount)
+		result, err = queryResult(db, "SELECT COUNT(*) FROM %s.mdl_user WHERE lastaccess > UNIX_TIMESTAMP(CURRENT_DATE());", dbName)
+		if err == nil {
+			ch <- prometheus.MustNewConstMetric(
+				c.moodleActiveUsers,
+				prometheus.GaugeValue,
+				result,
+				dbName,
+			)
 		}
-		ch <- prometheus.MustNewConstMetric(
-			c.moodleUsers,
-			prometheus.GaugeValue,
-			float64(userCount),
-			dbName,
-		)
 	}
 }
 
 func NewMoodleDBCollector() *MoodleDBCollector {
 	return &MoodleDBCollector{
-		moodleUsers: prometheus.NewDesc("moodle_users_total", "Number of users found in a MoodleDB", []string{"dbname"}, nil),
+		moodleUsers:       prometheus.NewDesc("moodle_users_total", "Number of users found in a MoodleDB", []string{"dbname"}, nil),
+		moodleActiveUsers: prometheus.NewDesc("moodle_users_active", "Number of users found in a MoodleDB which were active today", []string{"dbname"}, nil),
 	}
 }
 
