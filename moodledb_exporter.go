@@ -20,8 +20,9 @@ var (
 )
 
 type MoodleDBCollector struct {
-	moodleUsers       *prometheus.Desc
-	moodleActiveUsers *prometheus.Desc
+	moodleUsers         *prometheus.Desc
+	moodleLoggedInUsers *prometheus.Desc
+	moodleActiveUsers   *prometheus.Desc
 }
 
 func (c *MoodleDBCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -77,6 +78,15 @@ func (c *MoodleDBCollector) Collect(ch chan<- prometheus.Metric) {
 		result, err = queryResult(db, "SELECT COUNT(*) FROM %s.mdl_user WHERE lastaccess > UNIX_TIMESTAMP(CURRENT_DATE());", dbName)
 		if err == nil {
 			ch <- prometheus.MustNewConstMetric(
+				c.moodleLoggedInUsers,
+				prometheus.GaugeValue,
+				result,
+				dbName,
+			)
+		}
+		result, err = queryResult(db, "SELECT COUNT(DISTINCT(userid)) FROM %s.mdl_user_lastaccess WHERE timeaccess > UNIX_TIMESTAMP(NOW() - INTERVAL 15 MINUTE)", dbName)
+		if err == nil {
+			ch <- prometheus.MustNewConstMetric(
 				c.moodleActiveUsers,
 				prometheus.GaugeValue,
 				result,
@@ -88,8 +98,9 @@ func (c *MoodleDBCollector) Collect(ch chan<- prometheus.Metric) {
 
 func NewMoodleDBCollector() *MoodleDBCollector {
 	return &MoodleDBCollector{
-		moodleUsers:       prometheus.NewDesc("moodle_users_total", "Number of users found in a MoodleDB", []string{"dbname"}, nil),
-		moodleActiveUsers: prometheus.NewDesc("moodle_users_active", "Number of users found in a MoodleDB which were active today", []string{"dbname"}, nil),
+		moodleUsers:         prometheus.NewDesc("moodle_users_total", "Number of users found in a MoodleDB", []string{"dbname"}, nil),
+		moodleLoggedInUsers: prometheus.NewDesc("moodle_users_active", "Number of users found in a MoodleDB which have logged in today", []string{"dbname"}, nil),
+		moodleActiveUsers:   prometheus.NewDesc("moodle_users_active_now", "Number of users found in a MoodleDB which have been active in the last 15mins", []string{"dbname"}, nil),
 	}
 }
 
